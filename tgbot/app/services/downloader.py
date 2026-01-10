@@ -61,9 +61,16 @@ class VideoDownloader:
                 # Дополнительные опции для стабильности
                 'retries': 3,
                 'fragment_retries': 3,
-                # User-agent для обхода блокировок
+                # Обход географических блокировок
+                'geo_bypass': True,
+                'geo_bypass_country': 'RU',
+                # User-agent и дополнительные заголовки
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Referer': 'https://rutube.ru/',
                 },
             }
             
@@ -203,9 +210,16 @@ class VideoDownloader:
                 'socket_timeout': 60,
                 'retries': 5,
                 'fragment_retries': 5,
-                # User-agent для обхода блокировок
+                # Обход географических блокировок
+                'geo_bypass': True,
+                'geo_bypass_country': 'RU',
+                # User-agent и дополнительные заголовки
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Referer': 'https://rutube.ru/',
                 },
             }
             
@@ -293,8 +307,15 @@ class VideoDownloader:
                 'socket_timeout': 60,
                 'retries': 5,
                 'fragment_retries': 5,
+                # Обход географических блокировок
+                'geo_bypass': True,
+                'geo_bypass_country': 'RU',
+                # Заголовки
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Referer': 'https://rutube.ru/',
                 },
             }
             
