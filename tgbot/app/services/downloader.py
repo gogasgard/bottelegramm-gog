@@ -6,6 +6,7 @@ from typing import Callable, Optional
 import uuid
 
 import yt_dlp
+from loguru import logger
 
 from app.config import Config
 from app.utils.helpers import sanitize_filename
@@ -90,7 +91,8 @@ class VideoDownloader:
             )
             
         except Exception as e:
-            print(f"Error getting video info: {e}")
+            logger.error(f"Ошибка получения информации о видео: {e}")
+            logger.exception(e)
             return None
     
     def get_available_qualities(self, video_info: VideoInfo) -> list[dict]:
@@ -162,34 +164,32 @@ class VideoDownloader:
             unique_id = str(uuid.uuid4())[:8]
             output_template = str(self.downloads_path / f"{unique_id}_%(title)s.%(ext)s")
             
-            # КРИТИЧНО: YouTube форматы которые ГАРАНТИРОВАННО работают в Telegram
-            # Формат 18 (360p) - ВСЕГДА есть, H.264+AAC в MP4
-            # Формат 22 (720p) - обычно есть, H.264+AAC в MP4
-            # Формат 37 (1080p) - иногда есть, H.264+AAC в MP4
-            
-            # Маппинг качества на конкретные форматы
+            # Универсальный подход для всех платформ
+            # Используем фильтры высоты видео вместо конкретных ID форматов
             height = quality.replace('p', '') if quality != "best" else "9999"
             height_num = int(height)
             
-            # Выбор формата на основе качества
-            if height_num >= 1080 or quality == "best":
-                # 1080p и выше: пробуем 37 (1080p), 22 (720p), 18 (360p)
-                format_string = "37/22/18/best"
-            elif height_num >= 720:
-                # 720p: пробуем 22 (720p), 18 (360p)
-                format_string = "22/18/best"
-            elif height_num >= 480:
-                # 480p: пробуем 18 (360p) - ближайший доступный
-                format_string = "18/best"
+            # Формат: Сначала пробуем готовое видео с аудио, потом пробуем объединить видео+аудио
+            # Это работает для всех платформ: YouTube, Rutube, VK, TikTok
+            if quality == "best":
+                # Лучшее качество: сначала готовое видео, потом объединение
+                format_string = "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best"
             else:
-                # 360p и ниже: используем 18 (360p)
-                format_string = "18/best"
+                # Конкретное качество: сначала готовое видео с нужной высотой, потом объединение
+                format_string = (
+                    f"best[height<={height_num}][ext=mp4]/"
+                    f"bestvideo[height<={height_num}][ext=mp4]+bestaudio[ext=m4a]/"
+                    f"best[height<={height_num}]/"
+                    f"best"
+                )
             
             ydl_opts = {
                 'format': format_string,
                 'outtmpl': output_template,
-                'quiet': True,
-                'no_warnings': True,
+                'quiet': False,  # Включаем вывод для отладки
+                'no_warnings': False,
+                # Merge в MP4 если нужно объединить видео и аудио
+                'merge_output_format': 'mp4',
             }
             
             # Субтитры пока отключены (требуется ffmpeg для встраивания)

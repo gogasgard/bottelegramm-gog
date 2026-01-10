@@ -5,7 +5,8 @@ from pathlib import Path
 
 from aiogram import Router, Bot, F
 from aiogram.types import Message, FSInputFile, URLInputFile
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
+from loguru import logger
 
 from app.config import Config
 from app.database.database import Database
@@ -66,6 +67,18 @@ async def handle_url(
         )
         return
     
+    # Проверка длительности видео
+    if video_info.duration and video_info.duration > config.max_video_duration:
+        duration_hours = video_info.duration / 3600
+        max_hours = config.max_video_duration / 3600
+        await status_msg.edit_text(
+            f"❌ Видео слишком длинное!\n\n"
+            f"⏱️ Длительность: {duration_hours:.1f} часов\n"
+            f"📊 Максимум: {max_hours:.1f} часов\n\n"
+            f"💡 Выберите более короткое видео"
+        )
+        return
+    
     # Получение доступных качеств
     qualities = downloader.get_available_qualities(video_info)
     
@@ -74,6 +87,18 @@ async def handle_url(
             "❌ Не удалось получить доступные качества для этого видео."
         )
         return
+    
+    # Проверка примерного размера файла
+    if qualities and qualities[0].get('filesize', 0) > config.max_total_size:
+        file_size_mb = qualities[0]['filesize'] / (1024 * 1024)
+        max_size_mb = config.max_total_size / (1024 * 1024)
+        await status_msg.edit_text(
+            f"⚠️ Видео очень большое!\n\n"
+            f"💾 Примерный размер в лучшем качестве: {file_size_mb:.0f} МБ\n"
+            f"📊 Рекомендуемый максимум: {max_size_mb:.0f} МБ\n\n"
+            f"💡 Выберите более низкое качество (360p-480p) или более короткое видео"
+        )
+        # Не возвращаемся, даём возможность выбрать низкое качество
     
     # Формирование текста с информацией
     emoji = URLValidator.get_platform_emoji(platform)
@@ -86,6 +111,10 @@ async def handle_url(
         f"⏱️ Длительность: {duration_str}\n\n"
         f"Выберите качество:"
     )
+    
+    # Добавление предупреждения для длинных видео
+    if video_info.duration and video_info.duration > 1800:  # больше 30 минут
+        info_text += "\n\n⚠️ Видео длинное - рекомендуется 360p-480p"
     
     # Создание клавиатуры с качествами
     keyboard = create_quality_keyboard(qualities)
@@ -264,13 +293,26 @@ async def process_download(
         files_to_send = []
         
         if needs_processing and reason == "file_too_large" and not audio_only:
-            # Файл слишком большой - разбиваем на части
+            # Файл слишком большой - проверяем, можно ли разбить
             file_size_mb = result.file_size / (1024 * 1024)
+            
+            # Проверка: не будет ли слишком много частей
+            estimated_parts = result.file_size / config.split_part_size
+            if estimated_parts > config.max_parts_count:
+                await progress_tracker.update_status(
+                    "error",
+                    f"❌ Файл слишком большой: {file_size_mb:.0f} МБ\n"
+                    f"📦 Потребуется: ~{int(estimated_parts)} частей\n"
+                    f"📊 Максимум: {config.max_parts_count} частей\n\n"
+                    f"💡 Выберите более низкое качество (360p или 480p)"
+                )
+                cleanup_file(result.file_path)
+                return
             
             await progress_tracker.update_status(
                 "processing",
-                f"⚠️ Файл большой: {file_size_mb:.1f} МБ\n"
-                f"✂️ Разбивка на части (по ~40 МБ)..."
+                f"⚠️ Файл большой: {file_size_mb:.0f} МБ\n"
+                f"✂️ Разбивка на части (по ~45 МБ)..."
             )
             
             # Разбивка видео
@@ -320,12 +362,29 @@ async def process_download(
         for i, file_path in enumerate(files_to_send):
             try:
                 file_size = file_path.stat().st_size
+                
+                # КРИТИЧНО: Проверка размера перед отправкой
+                if file_size > config.max_file_size:
+                    file_size_mb = file_size / (1024 * 1024)
+                    max_size_mb = config.max_file_size / (1024 * 1024)
+                    error_msg = (
+                        f"❌ Файл {i+1} слишком большой для отправки!\n"
+                        f"💾 Размер: {file_size_mb:.1f} МБ\n"
+                        f"📊 Лимит Telegram: {max_size_mb:.0f} МБ\n\n"
+                        f"💡 Это ошибка разбивки. Попробуйте ещё раз с более низким качеством."
+                    )
+                    await bot.send_message(chat_id=chat_id, text=error_msg)
+                    logger.error(f"Файл {file_path.name} превышает лимит: {file_size_mb:.1f} МБ")
+                    continue
+                
                 caption = f"📹 {video_info.title}"
                 
                 if len(files_to_send) > 1:
                     caption += f"\n\n📦 Часть {i+1} из {len(files_to_send)}"
                 
                 caption += f"\n💾 Размер: {format_size(file_size)}"
+                
+                logger.info(f"Отправка файла {i+1}/{len(files_to_send)}: {format_size(file_size)}")
                 
                 # Отправка файла
                 if audio_only:
@@ -345,12 +404,30 @@ async def process_download(
                     )
                 
                 sent_messages.append(sent)
+                logger.info(f"Файл {i+1} отправлен успешно")
                 
+            except TelegramAPIError as e:
+                error_text = str(e)
+                if "Request Entity Too Large" in error_text or "file is too big" in error_text.lower():
+                    file_size_mb = file_path.stat().st_size / (1024 * 1024)
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"❌ Файл {i+1} слишком большой: {file_size_mb:.1f} МБ\n"
+                             f"📊 Лимит Telegram Bot API: 50 МБ\n\n"
+                             f"💡 Выберите более низкое качество"
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"❌ Ошибка отправки файла {i+1}: {str(e)}"
+                    )
+                logger.error(f"Ошибка Telegram API при отправке файла {i+1}: {e}")
             except Exception as e:
                 await bot.send_message(
                     chat_id=chat_id,
                     text=f"❌ Ошибка отправки файла {i+1}: {str(e)}"
                 )
+                logger.error(f"Неожиданная ошибка при отправке файла {i+1}: {e}")
         
         # Пересылка в канал и получение file_ids для всех частей
         forwarded_to_channel = False
