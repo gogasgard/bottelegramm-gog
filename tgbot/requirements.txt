@@ -1,8 +1,0 @@
-aiogram==3.13.1
-yt-dlp
-sqlalchemy==2.0.36
-aiosqlite
-ffmpeg-python
-aiofiles
-python-dotenv
-loguru
